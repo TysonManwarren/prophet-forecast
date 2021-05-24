@@ -1,0 +1,5 @@
+{
+    "python.pythonPath": "/opt/conda/envs/python36-env/bin/python",
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true
+}
