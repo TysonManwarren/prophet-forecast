@@ -356,12 +356,12 @@ for areas_index, areas_row in areas_df.iterrows():
             apply_weather_regression = True
 
         # Asphalt plant
-        if category_specific_hyperparameters == "True" and sites_row["CategoryID"] == 2:
+        if category_specific_hyperparameters is True and sites_row["CategoryID"] == 2:
             temp_changepoint_prior_scale = 0.5
             temp_days_of_usage = 15
 
         # Process
-        if category_specific_hyperparameters == "True" and sites_row["CategoryID"] == 3:
+        if category_specific_hyperparameters is True and sites_row["CategoryID"] == 3:
             temp_changepoint_prior_scale = 0.5
             temp_days_of_usage = 30
 

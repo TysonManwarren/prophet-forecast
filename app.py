@@ -32,7 +32,7 @@ import sqlite3
 from sqlite3 import Error
 
 today_date = "today"
-today_date = "5-22-2021"
+# today_date = "5-24-2021"
 
 ##
 ## IDEAS TO IMPROVE FORECASTING
@@ -135,7 +135,7 @@ def main():
     )
 
     days_of_usage = st.sidebar.selectbox(
-        "Days of usage", (7, 15, 30, 45, 60, 90, 120, 180, 365), index=2
+        "Days of usage", (7, 15, 21, 30, 45, 60, 90, 120, 180, 365, 730, 1095), index=3
     )
 
     category_specific_hyperparameters = st.sidebar.checkbox(
@@ -488,7 +488,18 @@ def single_site_forecast(
 
             df_gas["temp"] = pd.to_datetime(df_gas["ds"]).map(df_weather["y"])
 
-    if site_specific_hyperparameters:
+    # Asphalt plant
+    if category_specific_hyperparameters is True and category_id == 2:
+        changepoint_prior_scale = 0.5
+        days_of_usage = 15
+        st.write("CAT SPEC HPARAM")
+
+    # Process
+    if category_specific_hyperparameters is True and category_id == 3:
+        changepoint_prior_scale = 0.5
+        days_of_usage = 30
+
+    if site_specific_hyperparameters is True:
 
         # Connect to SQLite Database to store forecast information
         conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
@@ -507,7 +518,6 @@ def single_site_forecast(
             apply_weather_regression,
         )
 
-        st.write("ret")
         (
             days_of_usage,
             changepoint_prior_scale,
@@ -1001,11 +1011,6 @@ def full_forecast(
             df_gas["ds"] = pd.to_datetime(df_gas["ds"])
             df_gas.sort_values(by=["ds"], inplace=True)
 
-            # Remove entries older than X days
-            if days_of_usage != "ALL":
-                removeolderthan = forecast_for - datetime.timedelta(days_of_usage)
-                df_gas = df_gas.loc[df_gas["ds"] >= pd.to_datetime(removeolderthan)]
-
             # Just in case we changed the forecast date, remove usage after to avoid problems
             if today_date == "today":
                 df_gas = df_gas.loc[
@@ -1020,34 +1025,78 @@ def full_forecast(
 
                 df_gas["temp"] = pd.to_datetime(df_gas["ds"]).map(df_weather["y"])
 
+            temp_days_of_usage = days_of_usage
+            temp_changepoint_range = 0.80
             temp_changepoint_prior_scale = changepoint_prior_scale
+            temp_seasonality_mode = "additive"
+            temp_seasonality_prior_scale = 10
+            temp_daily_seasonality = daily_seasonality
+            temp_weekly_seasonality = weekly_seasonality
+            temp_yearly_seasonality = yearly_seasonality
+
             # Asphalt plant
             if (
-                category_specific_hyperparameters == "True"
+                category_specific_hyperparameters is True
                 and sites_row["CategoryID"] == 2
             ):
                 temp_changepoint_prior_scale = 0.5
-                temp_days_of_usage = 30
+                temp_days_of_usage = 15
 
             # Process
             if (
-                category_specific_hyperparameters == "True"
+                category_specific_hyperparameters is True
                 and sites_row["CategoryID"] == 3
             ):
                 temp_changepoint_prior_scale = 0.5
                 temp_days_of_usage = 30
 
-            if site_specific_hyperparameters:
+            if site_specific_hyperparameters is True:
+
+                # Connect to SQLite Database to store forecast information
+                conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
 
                 site_params_df = pd.read_sql_query(
                     "SELECT setting, value "
                     + "FROM Site_Forecast_Settings "
                     + "WHERE site_id = "
-                    + sites_row["ID"],
+                    + str(sites_row["ID"]),
                     conn,
                 )
 
+                sss = site_specific_settings(
+                    conn,
+                    sites_row["ID"],
+                    temp_days_of_usage,
+                    temp_changepoint_prior_scale,
+                    temp_changepoint_range,
+                    temp_seasonality_mode,
+                    temp_seasonality_prior_scale,
+                    temp_daily_seasonality,
+                    temp_weekly_seasonality,
+                    temp_yearly_seasonality,
+                    apply_weather_regression,
+                )
+
+                (
+                    temp_days_of_usage,
+                    temp_changepoint_prior_scale,
+                    temp_changepoint_range,
+                    temp_seasonality_mode,
+                    temp_seasonality_prior_scale,
+                    temp_daily_seasonality,
+                    temp_weekly_seasonality,
+                    temp_yearly_seasonality,
+                    apply_weather_regression,
+                ) = sss.retrieve()
+
                 st.dataframe(site_params_df)
+
+            # Remove entries older than X days
+            if days_of_usage != "ALL":
+                removeolderthan = forecast_for - datetime.timedelta(
+                    int(temp_days_of_usage)
+                )
+                df_gas = df_gas.loc[df_gas["ds"] >= pd.to_datetime(removeolderthan)]
 
             Prophet = predict_the_future(
                 df_gas=df_gas,
@@ -1057,12 +1106,12 @@ def full_forecast(
                 today_date=pd.to_datetime(today_date).date(),
                 days_to_forecast=days_to_forecast,
                 changepoint_prior_scale=temp_changepoint_prior_scale,
-                changepoint_range=changepoint_range,
-                seasonality_mode=seasonality_mode,
-                seasonality_prior_scale=seasonality_prior_scale,
-                daily_seasonality=daily_seasonality,
-                weekly_seasonality=weekly_seasonality,
-                yearly_seasonality=yearly_seasonality,
+                changepoint_range=temp_changepoint_range,
+                seasonality_mode=temp_seasonality_mode,
+                seasonality_prior_scale=temp_seasonality_prior_scale,
+                daily_seasonality=temp_daily_seasonality,
+                weekly_seasonality=temp_weekly_seasonality,
+                yearly_seasonality=temp_yearly_seasonality,
                 apply_weather_regression=apply_weather_regression,
                 streamlit=True,
             )
@@ -1353,7 +1402,7 @@ def forecasts():
         + "LEFT JOIN Forecast_Types ft ON ft.ID = f.forecast_type_id "
         + "WHERE Date(fs.ForecastDate) = '"
         + selected_forecast_date
-        + "' ORDER BY CAST(ft.ID AS integer)",
+        + "' AND ft.Hidden != 1 ORDER BY CAST(ft.ID AS integer)",
         conn,
     )
     forecast_ids_df.sort_values(by=["ID"])
@@ -1397,6 +1446,7 @@ def forecasts():
     # Name our index column and add a new column for total usage
     pivot_forecast_summary_df.index.name = "Area"
     pivot_forecast_summary_df["TotalUsage"] = ""
+    no_usage = False
 
     # Find and fill in TotalUsage for area/forecast
     for pfs_index, pfs_row in pivot_forecast_summary_df.iterrows():
@@ -1406,94 +1456,118 @@ def forecasts():
         # forecast_id = pfs_row.index[0][1]
 
         try:
-            pivot_forecast_summary_df.at[pfs_index, "TotalUsage"] = float(
-                "{:.1f}".format(total_usage_by_area_df.at[area_id, "Use"])
+            pivot_forecast_summary_df.at[pfs_index, "TotalUsage"] = int(
+                total_usage_by_area_df.at[area_id, "Use"]
             )
 
         except:
             pivot_forecast_summary_df.at[pfs_index, "TotalUsage"] = None
+            no_usage = True
 
     st.dataframe(pivot_forecast_summary_df)
 
-    with st.beta_expander("See Forecast Accuracy"):
+    if no_usage is False:
 
-        pivot_forecast_summary_df = pivot_forecast_summary_df.reset_index(
-            level=1, drop=True
-        )
+        with st.beta_expander("See Forecast Accuracy"):
 
-        pivot_forecast_summary_df.astype(float)
+            # pivot_forecast_summary_df = pivot_forecast_summary_df.reset_index(
+            #     level=1, drop=True
+            # )
 
-        for i in range(len(pivot_forecast_summary_df.columns) - 1):
+            # pivot_forecast_summary_df.reset_index(drop=True, inplace=True)
 
-            pivot_forecast_summary_df[i + 1] = abs(
-                pivot_forecast_summary_df[i + 1]
-                - pivot_forecast_summary_df["TotalUsage"]
-            )
+            # for i in range(len(pivot_forecast_summary_df.columns) - 1):
+            for pfs_index, pfs_row in pivot_forecast_summary_df.iterrows():
 
-        st.dataframe(pivot_forecast_summary_df.style.format({i + 1: "{:.1f}"}))
+                for col in range(len(pfs_row) - 1):
+
+                    forecast_type = pfs_row.index[col][0]
+                    forecast_id = pfs_row.index[col][1]
+
+                    pivot_forecast_summary_df.at[
+                        pfs_index, (forecast_type, forecast_id)
+                    ] = abs(
+                        pivot_forecast_summary_df.at[
+                            pfs_index, (forecast_type, forecast_id)
+                        ]
+                        - int(pfs_row.at["TotalUsage"])
+                    )
+
+            # Add total row
+            pivot_forecast_summary_df.loc["Total"] = pivot_forecast_summary_df.sum()
+
+            st.dataframe(pivot_forecast_summary_df)
+
+            # Remove total row, and transpose dataframe
+            del pivot_forecast_summary_df["TotalUsage"]
+            st.dataframe(pivot_forecast_summary_df.transpose())
 
     ##
     ## Output site-specific forecasts
     ##
 
+    st.header("Site-Specific Forecasts:")
+
     for areas_index, areas_row in areas_df.iterrows():
 
-        st.header(areas_row["Description"])
+        with st.beta_expander(areas_row["Description"]):
 
-        for forecast_ids_index, forecast_ids_row in forecast_ids_df.iterrows():
+            for forecast_ids_index, forecast_ids_row in forecast_ids_df.iterrows():
 
-            st.write(
-                str(forecast_ids_row[1]) + " - forecast_id: " + str(forecast_ids_row[0])
-            )
-
-            site_usage_df = pd.read_sql_query(
-                "SELECT site_id, ForecastAmount FROM Forecast_Detail "
-                + "WHERE forecast_id = "
-                + str(forecast_ids_row[0])
-                + " AND AreaID = "
-                + str(areas_row["AreaID"])
-                + " AND ForecastDate = '"
-                + selected_forecast_date
-                + "'",
-                conn,
-            )
-
-            # Copy site_id into new column, site_name
-            site_usage_df["site_name"] = site_usage_df["site_id"]
-            # Set the dataframe index to the site_name column
-            site_usage_df.set_index("site_name", inplace=True)
-
-            # Map and update the usage from the gas_df dataframe
-            site_usage_df["UsageAmount"] = 0
-            site_usage_df["UsageAmount"].update(gas_df.set_index("SiteID")["Use"])
-            # Reset the index
-            site_usage_df = site_usage_df.reset_index()
-
-            # Replace site_name column with actual name from sites_df dataframe
-            repl = sites_df.set_index("ID")["Name"]
-            site_usage_df["site_name"].replace(repl, inplace=True)
-
-            # Create new column showing the forecast and usage difference
-            site_usage_df["Difference"] = abs(
-                site_usage_df["ForecastAmount"] - site_usage_df["UsageAmount"]
-            )
-
-            # if (
-            #     site_usage_df["Difference"].all()
-            #     == site_usage_df["ForecastAmount"].all()
-            # ):
-            #     site_usage_df["Difference"] = 0
-
-            # Round some values
-            # site_usage_df["Difference"].round(decimals=2)
-            pd.set_option("display.precision", 1)
-            st.dataframe(
-                site_usage_df.style.format(
-                    {"ForecastAmount": "{:.1f}", "UsageAmount": "{:.1f}"}
+                st.write(
+                    str(forecast_ids_row[1])
+                    + " - forecast_id: "
+                    + str(forecast_ids_row[0])
                 )
-            )
 
-            # st.dataframe(site_usage_df)
+                site_usage_df = pd.read_sql_query(
+                    "SELECT site_id, ForecastAmount FROM Forecast_Detail "
+                    + "WHERE forecast_id = "
+                    + str(forecast_ids_row[0])
+                    + " AND AreaID = "
+                    + str(areas_row["AreaID"])
+                    + " AND ForecastDate = '"
+                    + selected_forecast_date
+                    + "'",
+                    conn,
+                )
+
+                # Copy site_id into new column, site_name
+                site_usage_df["site_name"] = site_usage_df["site_id"]
+                # Set the dataframe index to the site_name column
+                site_usage_df.set_index("site_name", inplace=True)
+
+                # Map and update the usage from the gas_df dataframe
+                site_usage_df["UsageAmount"] = 0
+                site_usage_df["UsageAmount"].update(gas_df.set_index("SiteID")["Use"])
+                # Reset the index
+                site_usage_df = site_usage_df.reset_index()
+
+                # Replace site_name column with actual name from sites_df dataframe
+                repl = sites_df.set_index("ID")["Name"]
+                site_usage_df["site_name"].replace(repl, inplace=True)
+
+                # Create new column showing the forecast and usage difference
+                site_usage_df["Difference"] = abs(
+                    site_usage_df["ForecastAmount"] - site_usage_df["UsageAmount"]
+                )
+
+                # if (
+                #     site_usage_df["Difference"].all()
+                #     == site_usage_df["ForecastAmount"].all()
+                # ):
+                #     site_usage_df["Difference"] = 0
+
+                # Round some values
+                # site_usage_df["Difference"].round(decimals=2)
+                pd.set_option("display.precision", 1)
+                st.dataframe(
+                    site_usage_df.style.format(
+                        {"ForecastAmount": "{:.1f}", "UsageAmount": "{:.1f}"}
+                    )
+                )
+
+                # st.dataframe(site_usage_df)
 
 
 def update_in_alist(alist, key, value):
