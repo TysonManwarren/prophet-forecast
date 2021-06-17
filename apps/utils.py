@@ -222,9 +222,6 @@ class predict_the_future(object):
             with suppress_stdout_stderr():
                 self.m_gas.fit(self.df_gas)
 
-        # st.write(self.m_gas.train_holiday_names)
-        # m_gas.history
-
         forecast_day_buffer = self.df_gas.iloc[-1]["ds"]
         delta = (
             pd.to_datetime(self.today_date).date()
@@ -233,18 +230,9 @@ class predict_the_future(object):
 
         if self.streamlit:
             with st.spinner("Making future dataframe..."):
-                self.future_gas = self.m_gas.make_future_dataframe(
-                    periods=delta.days
-                )  # Next 24x365 = 8760 hours
-                # self.future_gas = self.m_gas.make_future_dataframe(periods = 7) # Next 24x365 = 8760 hours
+                self.future_gas = self.m_gas.make_future_dataframe(periods=delta.days)
         else:
-            self.future_gas = self.m_gas.make_future_dataframe(
-                periods=delta.days
-            )  # Next 24x365 = 8760 hours
-
-        # growth = logistic
-        # self.future_gas['cap'] = df_gas['y'].max()
-        # self.future_gas['floor'] = 0
+            self.future_gas = self.m_gas.make_future_dataframe(periods=delta.days)
 
         if self.apply_weather_regression:
             self.future_gas["temp"] = self.future_gas["ds"].apply(self.weather_temp)
