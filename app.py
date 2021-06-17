@@ -32,7 +32,7 @@ import sqlite3
 from sqlite3 import Error
 
 today_date = "today"
-# today_date = "5-24-2021"
+# today_date = "6-11-2021"
 
 ##
 ## IDEAS TO IMPROVE FORECASTING
@@ -85,7 +85,8 @@ USR = ""
 PWD = ""
 
 # SQLite database for storing forecasting information
-forecasting_db_location = "file:" + root_share + "/Backend/Forecast_Data.db?mode=ro"
+forecasting_db_location_ro = "file:" + root_share + "/Backend/Forecast_Data.db?mode=ro"
+forecasting_db_location = "file:" + root_share + "/Backend/Forecast_Data.db"
 
 #
 # Areas lookup
@@ -123,7 +124,13 @@ def main():
     st.sidebar.title("Action")
     app_mode = st.sidebar.selectbox(
         "Choose Action",
-        ["Run Site Forecast", "Run Full Forecast", "Forecasts", "Customer Details"],
+        [
+            "Run Site Forecast",
+            "Run Full Forecast",
+            "Forecasts",
+            "Customer Details",
+            "Enter Forecasts",
+        ],
     )
 
     selected_area = st.sidebar.selectbox(
@@ -277,6 +284,9 @@ def main():
     if app_mode == "Forecasts":
         forecasts()
 
+    if app_mode == "Enter Forecasts":
+        enter_forecasts()
+
 
 def single_site_forecast(
     selected_area,
@@ -312,8 +322,16 @@ def single_site_forecast(
         projected_temp_df = mdb.read_table(MDB, "tblHeatingDDProjected")
 
         # Remove data not needed
+
+        ## 6/1/2021 - it appears that on the 1st of the month, the weather importer
+        ## program does NOT get historical temps for the 1st (which makes sense...)
+        ## Trying to use projected temperature for the current day (rather than historic)
+        ## This may cause issues on days that are not the 1st, or may make the forecast
+        ## more/less accurate?
+
         projected_temp_df = projected_temp_df.loc[
-            pd.to_datetime(projected_temp_df["Date"]).dt.date >= forecast_for
+            pd.to_datetime(projected_temp_df["Date"]).dt.date
+            >= pd.to_datetime(today_date)
         ]
         projected_temp_df["Date"] = pd.to_datetime(projected_temp_df["Date"])
 
@@ -502,7 +520,7 @@ def single_site_forecast(
     if site_specific_hyperparameters is True:
 
         # Connect to SQLite Database to store forecast information
-        conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
+        conn = sqlite3.connect(forecasting_db_location_ro, timeout=10, uri=True)
 
         sss = site_specific_settings(
             conn,
@@ -535,10 +553,8 @@ def single_site_forecast(
     df_gas.sort_values(by=["ds"], inplace=True)
 
     # Remove entries older than X days
-    removeolderthan = pd.to_datetime(today_date) - datetime.timedelta(
-        int(days_of_usage)
-    )
-    df_gas = df_gas.loc[df_gas["ds"] >= removeolderthan]
+    removeolderthan = forecast_for - datetime.timedelta(int(days_of_usage))
+    df_gas = df_gas.loc[df_gas["ds"] >= pd.to_datetime(removeolderthan)]
 
     df_gas = df_gas.loc[
         df_gas["ds"] <= pd.to_datetime(pd.to_datetime(today_date).date())
@@ -1053,7 +1069,7 @@ def full_forecast(
             if site_specific_hyperparameters is True:
 
                 # Connect to SQLite Database to store forecast information
-                conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
+                conn = sqlite3.connect(forecasting_db_location_ro, timeout=10, uri=True)
 
                 site_params_df = pd.read_sql_query(
                     "SELECT setting, value "
@@ -1357,7 +1373,7 @@ def customer_details():
 def forecasts():
 
     # Connect to SQLite Database to store forecast information
-    conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
+    conn = sqlite3.connect(forecasting_db_location_ro, timeout=10, uri=True)
 
     # Title and selections
     st.write("# Forecasts")
@@ -1568,6 +1584,149 @@ def forecasts():
                 )
 
                 # st.dataframe(site_usage_df)
+
+
+def enter_forecasts():
+
+    with st.form(key="enter_forecast_form"):
+
+        forecast_date = st.date_input("Forecast Date")
+
+        NGRID_forecast = st.text_input("NGRID Forecast")
+        DTI_forecast = st.text_input("DTI Forecast")
+        NCPL_forecast = st.text_input("NCPL Forecast")
+        OR_forecast = st.text_input("O&R Forecast")
+        OLE_forecast = st.text_input("Olean Forecast")
+        TCO_forecast = st.text_input("TCO Forecast")
+        TGP_forecast = st.text_input("TGP Forecast")
+        RGE_forecast = st.text_input("RGE Forecast")
+
+        submit_button = st.form_submit_button("Submit")
+
+    if forecast_date:
+
+        # Connect to SQLite Database to store forecast information
+        conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
+
+        forecast_id = create_forecast(conn, 99)
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                1,
+                "NYSEG DTI",
+                DTI_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                2,
+                "NYSEG TCO",
+                TCO_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                3,
+                "NYSEG TGP",
+                TGP_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                5,
+                "National Grid West",
+                NGRID_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                6,
+                "RG&E",
+                TGP_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                11,
+                "NYSEG NCPL",
+                NCPL_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                12,
+                "NYSEG O&R",
+                OR_forecast,
+            ),
+        )
+
+        save_forecast_summary(
+            conn,
+            (
+                forecast_id,
+                forecast_date,
+                13,
+                "NYSEG Olean",
+                OLE_forecast,
+            ),
+        )
+
+
+def create_forecast(conn, forecast_type_id):
+    """
+    Create a new forecast into the Forecasts table
+    :param conn:
+    :param forecast_type_id:
+    :return: forecast id
+    """
+    sql = """ INSERT INTO Forecasts (forecast_type_id)
+              VALUES (?)"""
+    cur = conn.cursor()
+    cur.execute(sql, [forecast_type_id])
+    conn.commit()
+    return cur.lastrowid
+
+
+def save_forecast_summary(conn, forecast):
+    """
+    Save a new forecast summary into the Forecast_Summary table
+    :param conn:
+    :param project:
+    :return: forecast id
+    """
+    sql = """ INSERT INTO Forecast_Summary (forecast_id, ForecastDate, AreaID, Description, ForecastTotal)
+              VALUES(?, ?, ?, ?, ?) """
+    cur = conn.cursor()
+    cur.execute(sql, forecast)
+    conn.commit()
+    return cur.lastrowid
 
 
 def update_in_alist(alist, key, value):
