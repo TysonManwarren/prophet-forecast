@@ -24,7 +24,7 @@ from sqlite3 import Error
 # Configuration Stuff
 
 today_date = "today"
-# today_date = '4/16/2021'
+# today_date = "6/15/2021"
 
 forecast_for = pd.to_datetime(today_date).date() + datetime.timedelta(1)
 
@@ -196,9 +196,16 @@ weather_stations_df = mdb.read_table(MDB, "tblWeatherStation")
 projected_temp_df = mdb.read_table(MDB, "tblHeatingDDProjected")
 
 # Remove data not needed
+## 6/1/2021 - it appears that on the 1st of the month, the weather importer
+## program does NOT get historical temps for the 1st (which makes sense...)
+## Trying to use projected temperature for the current day (rather than historic)
+## This may cause issues on days that are not the 1st, or may make the forecast
+## more/less accurate?
+
 projected_temp_df = projected_temp_df.loc[
-    pd.to_datetime(projected_temp_df["Date"]).dt.date >= forecast_for
+    pd.to_datetime(projected_temp_df["Date"]).dt.date >= pd.to_datetime(today_date)
 ]
+
 projected_temp_df["Date"] = pd.to_datetime(projected_temp_df["Date"])
 
 # Make sure that we have projected temperatures for each area
@@ -318,7 +325,7 @@ for areas_index, areas_row in areas_df.iterrows():
 
     for line_number, (sites_index, sites_row) in enumerate(sites_df.iterrows()):
 
-        # if sites_row["ID"] != 1416:
+        # if sites_row["ID"] != 410:
         #    continue
 
         if progress_display:
@@ -380,7 +387,7 @@ for areas_index, areas_row in areas_df.iterrows():
         df_gas["ds"] = pd.to_datetime(df_gas["ds"])
         df_gas.sort_values(by=["ds"], inplace=True)
 
-        if site_specific_hyperparameters:
+        if site_specific_hyperparameters is True:
 
             sss = site_specific_settings(
                 conn,
@@ -439,7 +446,7 @@ for areas_index, areas_row in areas_df.iterrows():
             df_weather=df_weather,
             projected_temp_df=projected_temp_df,
             WeatherStationID=WeatherStationID,
-            today_date=pd.to_datetime("today").date(),
+            today_date=pd.to_datetime(today_date).date(),
             days_to_forecast=days_to_forecast,
             changepoint_prior_scale=temp_changepoint_prior_scale,
             changepoint_range=temp_changepoint_range,
@@ -455,6 +462,8 @@ for areas_index, areas_row in areas_df.iterrows():
         Prophet.forecast(ph)
         m_gas = Prophet.m_gas
         forecast_gas = Prophet.forecast_gas
+
+        # print(forecast_gas)
 
         ## Cross validation results
         # cv_results = cross_validation(m_gas, initial = '180 days', period = '7 days', horizon = '30 days')
