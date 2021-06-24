@@ -14,6 +14,7 @@ class predict_the_future(object):
         WeatherStationID,
         today_date,
         days_to_forecast,
+        growth,
         changepoint_prior_scale,
         changepoint_range,
         seasonality_mode,
@@ -34,6 +35,7 @@ class predict_the_future(object):
         self.today_date = today_date
         self.days_to_forecast = days_to_forecast
 
+        self.growth = growth
         self.changepoint_prior_scale = changepoint_prior_scale
         self.changepoint_range = changepoint_range
 
@@ -96,7 +98,7 @@ class predict_the_future(object):
         # Training time
         self.m_gas = (
             ph.Prophet(
-                growth="linear",  # DEFAULT linear [ logistic ]
+                growth=self.growth,  # DEFAULT linear [ logistic / flat]
                 holidays=holiday_list,
                 # holidays_prior_scale=5,  # DEFAULT 10
                 changepoint_prior_scale=float(
@@ -165,36 +167,6 @@ class predict_the_future(object):
                 prior_scale=10,
                 mode="additive",
             )
-
-        # changepoint_prior_scale
-        # This is probably the most impactful parameter. It determines the flexibility of the
-        # trend, and in particular how much the trend changes at the trend changepoints. As
-        # described in this documentation, if it is too small, the trend will be underfit and
-        # variance that should have been modeled with trend changes will instead end up being
-        # handled with the noise term. If it is too large, the trend will overfit and in the
-        # most extreme case you can end up with the trend capturing yearly seasonality. The
-        # default of 0.05 works for many time series, but this could be tuned; a range of
-        # [0.001, 0.5] would likely be about right. Parameters like this (regularization
-        # penalties; this is effectively a lasso penalty) are often tuned on a log scale.
-
-        # seasonality_prior_scale
-        # This parameter controls the flexibility of the seasonality. Similarly, a large value
-        # allows the seasonality to fit large fluctuations, a small value shrinks the magnitude
-        # of the seasonality. The default is 10., which applies basically no regularization.
-        # That is because we very rarely see overfitting here (there’s inherent regularization
-        # with the fact that it is being modeled with a truncated Fourier series, so it’s
-        # essentially low-pass filtered). A reasonable range for tuning it would probably be
-        # [0.01, 10]; when set to 0.01 you should find that the magnitude of seasonality is
-        # forced to be very small. This likely also makes sense on a log scale, since it is
-        # effectively an L2 penalty like in ridge regression.
-
-        # holidays_prior_scale
-        # This controls flexibility to fit holiday effects. Similar to seasonality_prior_scale,
-        # it defaults to 10.0 which applies basically no regularization, since we usually have
-        # multiple observations of holidays and can do a good job of estimating their effects.
-        # This could also be tuned on a range of [0.01, 10] as with seasonality_prior_scale
-
-        # self.m_gas.add_country_holidays(country_name="US")  # Holidays regressor
 
         if self.apply_weather_regression:
             if self.streamlit:
@@ -290,6 +262,7 @@ class site_specific_settings(object):
         conn,
         site_id,
         days_of_usage,
+        growth,
         changepoint_prior_scale,
         changepoint_range,
         seasonality_mode,
@@ -303,6 +276,7 @@ class site_specific_settings(object):
         self.conn = conn
         self.site_id = site_id
         self.days_of_usage = days_of_usage
+        self.growth = growth
         self.changepoint_prior_scale = changepoint_prior_scale
         self.changepoint_range = changepoint_range
         self.seasonality_mode = seasonality_mode
@@ -327,6 +301,11 @@ class site_specific_settings(object):
         try:
             if site_params_df.loc["days_of_usage", "value"]:
                 self.days_of_usage = site_params_df.loc["days_of_usage", "value"]
+        except:
+            pass
+        try:
+            if site_params_df.loc["growth", "value"]:
+                self.growth = site_params_df.loc["growth", "value"]
         except:
             pass
         try:
@@ -386,6 +365,7 @@ class site_specific_settings(object):
 
         return (
             self.days_of_usage,
+            self.growth,
             self.changepoint_prior_scale,
             self.changepoint_range,
             self.seasonality_mode,

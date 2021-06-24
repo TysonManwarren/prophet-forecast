@@ -24,7 +24,7 @@ from sqlite3 import Error
 # Configuration Stuff
 
 today_date = "today"
-# today_date = "6/15/2021"
+# today_date = "6/16/2021"
 
 forecast_for = pd.to_datetime(today_date).date() + datetime.timedelta(1)
 
@@ -39,8 +39,6 @@ changepoint_prior_scale = 0.05  # Default is 0.05
 
 force_weather_regression_for_all = False
 
-category_specific_hyperparameters = False
-
 MDB = "/mnt/arminius/DailyBalancing_be.mdb"
 DRV = "{Microsoft Access Driver (*.mdb)}"
 USR = ""
@@ -53,9 +51,9 @@ if len(sys.argv) > 1:
         forecast_type_id,
         progress_display,
         insert_into_db,
+        growth,
         days_of_usage,
         changepoint_prior_scale,
-        category_specific_hyperparameters,
         site_specific_hyperparameters,
         daily_seasonality,
         weekly_seasonality,
@@ -347,6 +345,7 @@ for areas_index, areas_row in areas_df.iterrows():
         apply_weather_regression = False
 
         temp_days_of_usage = days_of_usage
+        temp_growth = growth
         temp_changepoint_range = 0.80
         temp_changepoint_prior_scale = changepoint_prior_scale
         temp_seasonality_mode = "additive"
@@ -361,16 +360,6 @@ for areas_index, areas_row in areas_df.iterrows():
             or force_weather_regression_for_all
         ):
             apply_weather_regression = True
-
-        # Asphalt plant
-        if category_specific_hyperparameters is True and sites_row["CategoryID"] == 2:
-            temp_changepoint_prior_scale = 0.5
-            temp_days_of_usage = 15
-
-        # Process
-        if category_specific_hyperparameters is True and sites_row["CategoryID"] == 3:
-            temp_changepoint_prior_scale = 0.5
-            temp_days_of_usage = 30
 
         ## Get usage data
 
@@ -393,6 +382,7 @@ for areas_index, areas_row in areas_df.iterrows():
                 conn,
                 sites_row["ID"],
                 temp_days_of_usage,
+                temp_growth,
                 temp_changepoint_prior_scale,
                 temp_changepoint_range,
                 temp_seasonality_mode,
@@ -405,6 +395,7 @@ for areas_index, areas_row in areas_df.iterrows():
 
             (
                 temp_days_of_usage,
+                temp_growth,
                 temp_changepoint_prior_scale,
                 temp_changepoint_range,
                 temp_seasonality_mode,
@@ -433,6 +424,7 @@ for areas_index, areas_row in areas_df.iterrows():
             print("    Applying weather regression? " + str(apply_weather_regression))
             print("    Category " + str(sites_row["CategoryID"]))
             print("    Days of Usage " + str(temp_days_of_usage))
+            print("    Growth " + str(temp_growth))
             print("    CPS " + str(temp_changepoint_prior_scale))
             print("    Changepoint Range " + str(temp_changepoint_range))
             print("    Seasonality Mode " + str(temp_seasonality_mode))
@@ -448,6 +440,7 @@ for areas_index, areas_row in areas_df.iterrows():
             WeatherStationID=WeatherStationID,
             today_date=pd.to_datetime(today_date).date(),
             days_to_forecast=days_to_forecast,
+            growth=temp_growth,
             changepoint_prior_scale=temp_changepoint_prior_scale,
             changepoint_range=temp_changepoint_range,
             seasonality_mode=temp_seasonality_mode,
@@ -540,13 +533,8 @@ for areas_index, areas_row in areas_df.iterrows():
 print("=" * 50)
 print("Forecast Type: " + str(forecast_type_id))
 print("Days of usage: " + str(days_of_usage))
-if category_specific_hyperparameters == "True":
-    print(
-        "Changepoint Prior Scale (CPS): Category Specific [ default = "
-        + str(changepoint_prior_scale)
-        + " ]"
-    )
-elif site_specific_hyperparameters:
+print("Growth " + growth)
+if site_specific_hyperparameters:
     print(
         "Changepoint Prior Scale (CPS): Site Specific [ "
         + str(changepoint_prior_scale)

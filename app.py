@@ -32,7 +32,7 @@ import sqlite3
 from sqlite3 import Error
 
 today_date = "today"
-# today_date = "6-11-2021"
+# today_date = "6-18-2021"
 
 ##
 ## IDEAS TO IMPROVE FORECASTING
@@ -145,14 +145,29 @@ def main():
         "Days of usage", (7, 15, 21, 30, 45, 60, 90, 120, 180, 365, 730, 1095), index=3
     )
 
-    category_specific_hyperparameters = st.sidebar.checkbox(
-        "Category Specific Hyperparameters", value=False
-    )
-
     site_specific_hyperparameters = st.sidebar.checkbox(
         "Site Specific Hyperparameters",
         value=False,
         help="Pulls site settings entered into SQLite database.  These values will override any settings selected on this page.",
+    )
+
+    growth = st.sidebar.selectbox(
+        "Growth",
+        ("flat", "linear", "logistic"),
+        index=0,
+        help="Linear Growth: This is the default setting for Prophet. It uses a set of "
+        + "piecewise linear equations with differing slopes between change points. When "
+        + "linear growth is used, the growth term will look similar to the classic "
+        + "y = mx + b from middle school, except the slope(m) and offset(b) are variable "
+        + "and will change value at each changepoint."
+        + "\n\r"
+        + "Logistic Growth: This setting is useful when your time series has a cap or a "
+        + "floor in which the values you are modeling becomes saturated and can’t surpass "
+        + "a maximum or minimum value (think carrying capacity).  "
+        + "\n\r"
+        + "Flat: Lastly, you can choose a flat trend when there is no growth over time "
+        + "(but there still may be seasonality). If set to flat the growth function will "
+        + "be a constant value.",
     )
 
     changepoint_prior_scale = st.sidebar.text_input(
@@ -243,6 +258,7 @@ def main():
             selected_area,
             selected_category,
             days_of_usage,
+            growth,
             changepoint_prior_scale,
             changepoint_range,
             seasonality_mode,
@@ -253,7 +269,6 @@ def main():
             perform_cross_validation,
             hyperparameter_tuning,
             model_robustness,
-            category_specific_hyperparameters,
             site_specific_hyperparameters,
             show_charts,
         )
@@ -263,6 +278,7 @@ def main():
             selected_area,
             selected_category,
             days_of_usage,
+            growth,
             changepoint_prior_scale,
             changepoint_range,
             seasonality_mode,
@@ -273,7 +289,6 @@ def main():
             perform_cross_validation,
             hyperparameter_tuning,
             model_robustness,
-            category_specific_hyperparameters,
             site_specific_hyperparameters,
             show_charts,
         )
@@ -292,6 +307,7 @@ def single_site_forecast(
     selected_area,
     selected_category,
     days_of_usage,
+    growth,
     changepoint_prior_scale,
     changepoint_range,
     seasonality_mode,
@@ -302,7 +318,6 @@ def single_site_forecast(
     perform_cross_validation,
     hyperparameter_tuning,
     model_robustness,
-    category_specific_hyperparameters,
     site_specific_hyperparameters,
     show_charts,
 ):
@@ -506,17 +521,6 @@ def single_site_forecast(
 
             df_gas["temp"] = pd.to_datetime(df_gas["ds"]).map(df_weather["y"])
 
-    # Asphalt plant
-    if category_specific_hyperparameters is True and category_id == 2:
-        changepoint_prior_scale = 0.5
-        days_of_usage = 15
-        st.write("CAT SPEC HPARAM")
-
-    # Process
-    if category_specific_hyperparameters is True and category_id == 3:
-        changepoint_prior_scale = 0.5
-        days_of_usage = 30
-
     if site_specific_hyperparameters is True:
 
         # Connect to SQLite Database to store forecast information
@@ -526,6 +530,7 @@ def single_site_forecast(
             conn,
             selected_site,
             days_of_usage,
+            growth,
             changepoint_prior_scale,
             changepoint_range,
             seasonality_mode,
@@ -538,6 +543,7 @@ def single_site_forecast(
 
         (
             days_of_usage,
+            growth,
             changepoint_prior_scale,
             changepoint_range,
             seasonality_mode,
@@ -562,6 +568,7 @@ def single_site_forecast(
 
     with st.beta_expander("Show parameters used"):
         st.write("Days of usage " + str(days_of_usage))
+        st.write("Growth " + str(growth))
         st.write("CPS " + str(changepoint_prior_scale))
         st.write("Changepoint Range " + str(changepoint_range))
         st.write("Seasonality Mode " + str(seasonality_mode))
@@ -577,6 +584,7 @@ def single_site_forecast(
         WeatherStationID=WeatherStationID,
         today_date=pd.to_datetime(today_date).date(),
         days_to_forecast=days_to_forecast,
+        growth=growth,
         changepoint_prior_scale=changepoint_prior_scale,
         changepoint_range=changepoint_range,
         seasonality_mode=seasonality_mode,
@@ -687,6 +695,8 @@ def single_site_forecast(
         # st.write(forecast_gas)
         # st.write(y_pred)
 
+        mse = mean_squared_error(y_true, y_pred)
+        st.write("MSE: %.3f" % mse)
         mae = mean_absolute_error(y_true, y_pred)
         st.write("MAE: %.3f" % mae)
         r = r2_score(y_true, y_pred)
@@ -732,6 +742,11 @@ def single_site_forecast(
 
     with st.beta_expander("See components"):
 
+        ## Plot/Show with changepoints
+        fig = m_gas.plot(forecast_gas)
+        a = add_changepoints_to_plot(fig.gca(), m_gas, forecast_gas)
+        st.plotly_chart(fig)
+
         ## Plot/Show components
         fig = m_gas.plot_components(forecast_gas)
         if apply_weather_regression:
@@ -772,6 +787,7 @@ def full_forecast(
     selected_area,
     selected_category,
     days_of_usage,
+    growth,
     changepoint_prior_scale,
     changepoint_range,
     seasonality_mode,
@@ -782,7 +798,6 @@ def full_forecast(
     perform_cross_validation,
     hyperparameter_tuning,
     model_robustness,
-    category_specific_hyperparameters,
     site_specific_hyperparameters,
     show_charts,
 ):
@@ -1043,28 +1058,13 @@ def full_forecast(
 
             temp_days_of_usage = days_of_usage
             temp_changepoint_range = 0.80
+            temp_growth = growth
             temp_changepoint_prior_scale = changepoint_prior_scale
             temp_seasonality_mode = "additive"
             temp_seasonality_prior_scale = 10
             temp_daily_seasonality = daily_seasonality
             temp_weekly_seasonality = weekly_seasonality
             temp_yearly_seasonality = yearly_seasonality
-
-            # Asphalt plant
-            if (
-                category_specific_hyperparameters is True
-                and sites_row["CategoryID"] == 2
-            ):
-                temp_changepoint_prior_scale = 0.5
-                temp_days_of_usage = 15
-
-            # Process
-            if (
-                category_specific_hyperparameters is True
-                and sites_row["CategoryID"] == 3
-            ):
-                temp_changepoint_prior_scale = 0.5
-                temp_days_of_usage = 30
 
             if site_specific_hyperparameters is True:
 
@@ -1083,6 +1083,7 @@ def full_forecast(
                     conn,
                     sites_row["ID"],
                     temp_days_of_usage,
+                    temp_growth,
                     temp_changepoint_prior_scale,
                     temp_changepoint_range,
                     temp_seasonality_mode,
@@ -1095,6 +1096,7 @@ def full_forecast(
 
                 (
                     temp_days_of_usage,
+                    temp_growth,
                     temp_changepoint_prior_scale,
                     temp_changepoint_range,
                     temp_seasonality_mode,
@@ -1121,6 +1123,7 @@ def full_forecast(
                 WeatherStationID=WeatherStationID,
                 today_date=pd.to_datetime(today_date).date(),
                 days_to_forecast=days_to_forecast,
+                growth=growth,
                 changepoint_prior_scale=temp_changepoint_prior_scale,
                 changepoint_range=temp_changepoint_range,
                 seasonality_mode=temp_seasonality_mode,
@@ -1242,6 +1245,7 @@ def full_forecast(
 
     st.write("=" * 50)
     st.write("Days of usage: " + str(days_of_usage))
+    st.write("Growth: " + str(growth))
     st.write("Changepoint Prior Scale (CPS): " + str(changepoint_prior_scale))
     st.write("=" * 50)
 
@@ -1428,7 +1432,9 @@ def forecasts():
     # Output forecast types
 
     forecast_types_df = pd.read_sql_query(
-        "SELECT ID, Description " + "FROM Forecast_Types" + " ORDER BY ID",
+        "SELECT ID, Description "
+        + "FROM Forecast_Types"
+        + " WHERE hidden = 0 ORDER BY ID",
         conn,
     )
 
@@ -1603,7 +1609,16 @@ def enter_forecasts():
 
         submit_button = st.form_submit_button("Submit")
 
-    if forecast_date:
+    if (
+        forecast_date
+        and DTI_forecast
+        and TCO_forecast
+        and TGP_forecast
+        and NGRID_forecast
+        and RGE_forecast
+        and OR_forecast
+        and OLE_forecast
+    ):
 
         # Connect to SQLite Database to store forecast information
         conn = sqlite3.connect(forecasting_db_location, timeout=10, uri=True)
@@ -1661,7 +1676,7 @@ def enter_forecasts():
                 forecast_date,
                 6,
                 "RG&E",
-                TGP_forecast,
+                RGE_forecast,
             ),
         )
 
